@@ -1,0 +1,3 @@
+# Copy to /etc/tdm/greeter.conf and edit as root.
+# Available themes: dark, light, high-contrast
+theme=dark
