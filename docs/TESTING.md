@@ -7,8 +7,9 @@ a recovery TTY, and a separate administrator account.
 ## Automated checks
 
 The regular CI workflow runs formatting, unit tests, Clippy, and installer
-syntax checks. Protocol unit tests use in-memory streams; they do not start
-greetd or authenticate through PAM.
+syntax checks. The greeter tests include a full client conversation over a
+mock Unix socket, but the mock does not run greetd or authenticate through
+PAM. Real daemon/PAM validation still requires disposable distro VMs.
 
 ## greetd/PAM integration test matrix
 
