@@ -2,7 +2,7 @@
 
 A lightweight Linux display-manager project written in Rust for TomOS and other Linux distributions.
 
-> **Development status: experimental preview (0.0.4).** TDM includes a session-discovery CLI and a GTK4 graphical greeter preview. **PAM authentication and desktop session launching are not implemented yet.** Do not install this as your system login manager.
+> **Development status: experimental preview (0.0.5).** TDM includes a session-discovery CLI and a GTK4 greeter with an initial greetd/PAM authentication flow. Desktop session launching is not implemented. Do not install this as your system login manager yet.
 
 ## Components
 
@@ -13,15 +13,16 @@ A lightweight Linux display-manager project written in Rust for TomOS and other 
 - Reads `Name`, `Exec`, `Hidden`, and `NoDisplay` desktop-entry keys.
 - Skips hidden entries and reports malformed session metadata.
 
-### `tdm-greeter` — graphical preview
+### `tdm-greeter` — GTK4 greeter
 
-- GTK4 interface with a dark charcoal and neon-cyan TomOS theme.
-- Username and password fields for layout preview only.
-- Wayland/X11/automatic session selector mock-up.
-- Preview status feedback.
-- Shutdown and restart controls are disabled.
+- TomOS dark-charcoal and neon-cyan interface.
+- Sends the entered Linux username to greetd using its supported IPC protocol.
+- Uses greetd as the authentication broker; PAM policy is applied by the host's greetd installation.
+- Handles secret, visible, informational, and error authentication messages.
+- Clears response fields after submission, supports cancellation, and applies socket read/write timeouts.
+- Runs the IPC conversation on a worker thread so the GTK interface remains responsive.
 
-**Important:** The Continue button does not send credentials anywhere. It clears the password field and displays a preview-only message. No PAM authentication is performed. The session selector is not connected to a session launcher. Do not configure this binary as the greeter for greetd, systemd, or another display manager.
+**Important limitations:** TDM does not implement PAM itself and does not verify passwords. Authentication only works when the greeter is launched by a correctly configured greetd instance with `GREETD_SOCK` available and a suitable host PAM configuration. After successful authentication, this preview cancels the pending greetd session because desktop session launching is not implemented yet. It is therefore an authentication integration preview, not a usable daily-login display manager. Do not configure it as your only login path.
 
 ## Build
 
@@ -57,27 +58,25 @@ Check session metadata:
 ./target/release/tdm check
 ```
 
-Launch the graphical preview from an existing desktop session:
+The greeter must be started by greetd to receive its IPC socket. Running it directly from a normal desktop session will show a connection/configuration error when sign-in is attempted.
 
-```sh
-./target/release/tdm-greeter
-```
+## Authentication architecture
 
-## Authentication roadmap
+TDM deliberately delegates authentication to greetd and the host's PAM stack. The greetd IPC protocol carries authentication prompts and responses; TDM never reads shadow files, calls password-verification APIs, or stores credentials. PAM conversation prompts are not assumed to be password-only: visible and secret prompts are presented to the user, while informational and error messages are displayed and acknowledged without an answer.
 
-The planned design is to use greetd as the session and authentication backend, with PAM performing authentication according to the host distribution's policy. TDM must not implement password verification itself or store credentials.
-
-Before authentication can be described as implemented, the project needs a protocol-correct greetd IPC state machine, handling all PAM conversation message types, cancellation, timeouts, and errors, plus integration tests with greetd/PAM. After authentication, it must safely launch a selected desktop session. Neither capability is included in this version.
+The IPC implementation uses the `greetd_ipc` crate rather than hand-written JSON framing. The protocol uses a native-endian 32-bit payload length followed by JSON, and greetd exposes its socket path through `GREETD_SOCK`.
 
 ## Roadmap
 
 - [x] Rust project and CLI foundation
 - [x] Wayland and X11 session discovery
 - [x] Desktop-entry validation and unit tests
-- [x] GTK4 graphical greeter preview
-- [ ] Reviewed greetd IPC authentication flow
-- [ ] PAM multi-prompt handling and cancellation
-- [ ] Safe session command parsing and launching
+- [x] GTK4 graphical greeter
+- [x] Initial greetd/PAM authentication conversation
+- [x] Secret/visible/info/error prompt handling
+- [x] Authentication cancellation and IPC timeouts
+- [ ] Automated greetd IPC state-machine tests
+- [ ] Safe desktop session command selection and launching
 - [ ] Functional power controls
 - [ ] Theme configuration and accessibility review
 - [ ] systemd integration and distro packages
