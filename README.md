@@ -1,61 +1,97 @@
 # TomOS Display Manager (TDM)
 
-A lightweight Linux display-manager project written in Rust, intended for TomOS and other Linux distributions.
+A lightweight Linux display-manager project written in Rust for TomOS and other Linux distributions.
 
-> **Development status: early foundation (0.1.0).** This first version discovers and validates installed desktop-session metadata. It is not yet a login screen and must not be configured as the system's login manager.
+> **Development status: experimental preview (0.2.0).** TDM currently includes a session-discovery CLI and a graphical GTK greeter preview. The graphical screen is not connected to authentication or session launching and must not be installed as the system login manager.
 
-## Current functionality
+## Components
 
-- Native Rust command-line utility.
+### `tdm` — session discovery CLI
+
 - Discovers Wayland sessions in `/usr/share/wayland-sessions`.
 - Discovers X11 sessions in `/usr/share/xsessions`.
-- Reads each desktop entry's `Name`, `Exec`, `Hidden`, and `NoDisplay` keys.
-- Skips hidden sessions and reports malformed session entries.
-- Includes unit tests and a CI workflow.
+- Reads `Name`, `Exec`, `Hidden`, and `NoDisplay` desktop-entry keys.
+- Skips hidden entries and reports malformed session metadata.
+
+### `tdm-greeter` — graphical preview
+
+- GTK4 interface with a dark charcoal and neon-cyan TomOS theme.
+- Username and password entry controls.
+- Wayland/X11/automatic session selector mock-up.
+- Login status feedback.
+- Shutdown and restart controls shown as disabled until safely integrated.
+
+**Important:** The greeter is a visual prototype only. It does not send, store, or authenticate credentials. The Continue button clears the password field and displays a preview-only message. Power controls are disabled. Do not configure it as a greeter for greetd, systemd, or another display manager.
 
 ## Build
 
-Requires Rust 1.75 or newer.
+Requires Rust 1.83 or newer, GTK4 development files, and `pkg-config`.
+
+On Debian/Ubuntu:
+
+```sh
+sudo apt install build-essential pkg-config libgtk-4-dev
+```
+
+Build both binaries:
 
 ```sh
 cargo build --release
 ```
 
-The executable is created at `target/release/tdm`.
+Binaries:
+- `target/release/tdm`
+- `target/release/tdm-greeter`
 
-## Usage
+## Run
+
+List detected desktop sessions:
 
 ```sh
-tdm help
-tdm list-sessions
-tdm check
-tdm version
+./target/release/tdm list-sessions
 ```
 
-## Security and architecture
+Check session metadata:
 
-TDM deliberately does **not** authenticate users, read passwords, run commands as root, or start desktop sessions in this initial release. A production display manager needs a carefully audited privilege boundary and a supported authentication/session backend.
+```sh
+./target/release/tdm check
+```
 
-The planned architecture is to use an established Linux login backend (such as `greetd` with PAM) rather than implementing password handling or PAM itself. The future greeter will communicate with that backend, while TDM handles session discovery, configuration, and the user interface. Until that integration and its security review are complete, keep your existing display manager enabled.
+Launch the graphical preview from an existing desktop session:
+
+```sh
+./target/release/tdm-greeter
+```
+
+Do not run the preview as a system login manager.
+
+## Security architecture
+
+The intended production design is to delegate authentication and privileged session management to a maintained backend such as greetd with PAM. TDM should act as an unprivileged greeter client and must not implement password verification, retain credentials, or run arbitrary commands as root.
+
+Before production use, the project needs a reviewed greetd IPC state machine that supports all PAM conversation message types, safe session command parsing, cancellation and timeout handling, plus integration tests on supported distributions. No production authentication path is included in this release.
 
 ## Roadmap
 
 - [x] Rust project and CLI foundation
 - [x] Wayland and X11 session discovery
-- [x] Desktop-entry validation and tests
-- [ ] TOML configuration and theme support
-- [ ] Graphical greeter
-- [ ] Authentication backend integration
-- [ ] Session launch and logout lifecycle
+- [x] Desktop-entry validation and unit tests
+- [x] GTK4 graphical greeter preview
+- [ ] Live session discovery in the greeter
+- [ ] Reviewed greetd IPC authentication flow
+- [ ] PAM multi-prompt handling and cancellation
+- [ ] Safe session command parsing and launching
+- [ ] Functional power controls
+- [ ] Theme configuration and accessibility review
 - [ ] systemd integration and distro packages
 - [ ] Security review and installation testing
 
 ## Development
 
 ```sh
-cargo fmt --check
-cargo test
-cargo clippy -- -D warnings
+cargo fmt --all -- --check
+cargo test --all-targets
+cargo clippy --all-targets -- -D warnings
 ```
 
 ## License
