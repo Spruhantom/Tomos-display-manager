@@ -101,6 +101,14 @@ button:disabled { background: #000000; color: #aaaaaa; border-color: #aaaaaa; }
 *:focus { outline: 4px solid #00ffff; outline-offset: 3px; }
 "#;
 
+fn css_for_theme(theme: &str) -> &'static str {
+    match theme {
+        "light" => LIGHT_CSS,
+        "high-contrast" => HIGH_CONTRAST_CSS,
+        _ => CSS,
+    }
+}
+
 fn configured_css() -> &'static str {
     let configured = env::var("TDM_THEME").ok().or_else(|| {
         std::fs::read_to_string("/etc/tdm/greeter.conf").ok().and_then(|contents| {
@@ -110,11 +118,7 @@ fn configured_css() -> &'static str {
             })
         })
     });
-    match configured.as_deref().unwrap_or("dark") {
-        "light" => LIGHT_CSS,
-        "high-contrast" => HIGH_CONTRAST_CSS,
-        _ => CSS,
-    }
+    css_for_theme(configured.as_deref().unwrap_or("dark"))
 }
 
 fn connect_power_control(
@@ -413,14 +417,18 @@ fn build_window(app: &gtk::Application) {
     heading.add_css_class("tdm-accent");
     heading.set_halign(gtk::Align::Start);
 
-    let username_label = gtk::Label::new(Some("USERNAME"));
+    let username_label = gtk::Label::new(Some("_USERNAME"));
+    username_label.set_use_underline(true);
+    username_label.set_mnemonic_widget(Some(&username));
     username_label.set_halign(gtk::Align::Start);
     username_label.add_css_class("tdm-subtitle");
     let username = gtk::Entry::new();
     username.set_placeholder_text(Some("Your username"));
     username.set_hexpand(true);
 
-    let session_label = gtk::Label::new(Some("DESKTOP SESSION"));
+    let session_label = gtk::Label::new(Some("_DESKTOP SESSION"));
+    session_label.set_use_underline(true);
+    session_label.set_mnemonic_widget(Some(&session_dropdown));
     session_label.set_halign(gtk::Align::Start);
     session_label.add_css_class("tdm-subtitle");
     let (sessions, session_warnings) = session::discover_sessions();
@@ -461,6 +469,8 @@ fn build_window(app: &gtk::Application) {
     let login = gtk::Button::with_label("Sign in");
     login.add_css_class("suggested-action");
     login.set_hexpand(true);
+    login.set_receives_default(true);
+    window.set_default_widget(Some(&login));
     login.set_sensitive(!sessions.is_empty());
 
     let cancel = gtk::Button::with_label("Cancel");
@@ -548,6 +558,11 @@ fn build_window(app: &gtk::Application) {
                 UiEvent::Prompt { message, secret } => {
                     prompt_label_for_events.set_text(&message);
                     prompt_for_events.set_visibility(!secret);
+                    prompt_for_events.set_input_purpose(if secret {
+                        gtk::InputPurpose::Password
+                    } else {
+                        gtk::InputPurpose::FreeForm
+                    });
                     prompt_for_events.set_text("");
                     prompt_for_events.set_placeholder_text(Some(if secret {
                         "Secret response"
@@ -652,6 +667,14 @@ fn main() -> gtk::glib::ExitCode {
 mod greetd_protocol_tests {
     use super::*;
     use std::io::Cursor;
+
+    #[test]
+    fn selects_supported_themes_and_defaults_unknown_values_to_dark() {
+        assert!(std::ptr::eq(css_for_theme("dark"), CSS));
+        assert!(std::ptr::eq(css_for_theme("light"), LIGHT_CSS));
+        assert!(std::ptr::eq(css_for_theme("high-contrast"), HIGH_CONTRAST_CSS));
+        assert!(std::ptr::eq(css_for_theme("unknown"), CSS));
+    }
 
     #[test]
     fn decodes_secret_authentication_prompt_with_protocol_field_names() {
