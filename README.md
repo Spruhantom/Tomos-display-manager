@@ -28,6 +28,16 @@ A lightweight Linux display-manager project written in Rust for TomOS and other 
 
 **Important limitations:** TDM does not implement PAM itself and does not verify passwords. Authentication and launching require a correctly configured greetd instance with `GREETD_SOCK` available and a suitable host PAM configuration. Session startup depends on the installed desktop session's own environment and startup scripts. This initial implementation has not yet been validated end-to-end on different distributions or desktop environments. Keep a separate TTY or recovery login available until that testing is complete.
 
+## Install (Arch, Debian/Ubuntu, Fedora)
+
+The installer builds TDM from source and installs `tdm` and `tdm-greeter` into `/usr/local/bin`. It installs build dependencies and Rust for the current user where needed. It does **not** configure greetd, enable a service, or replace your current display manager.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Spruhantom/Tomos-display-manager/main/install.sh | bash
+```
+
+Supported distribution families: Arch-based, Debian/Ubuntu-based, and Fedora. Other distributions are rejected rather than guessed. Review the [installer script](install.sh) before running it. TDM is experimental; keep your existing login manager and a recovery TTY available.
+
 ## Build
 
 Requires Rust 1.83 or newer, GTK4 development files, and `pkg-config`.
