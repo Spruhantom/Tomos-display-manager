@@ -29,6 +29,14 @@ impl SessionKind {
 fn parse_desktop_entry(path: &Path, kind: SessionKind) -> Result<Option<Session>, String> {
     let contents = fs::read_to_string(path)
         .map_err(|error| format!("{}: {error}", path.display()))?;
+    parse_desktop_contents(&contents, path, kind)
+}
+
+fn parse_desktop_contents(
+    contents: &str,
+    path: &Path,
+    kind: SessionKind,
+) -> Result<Option<Session>, String> {
     let mut in_desktop_entry = false;
     let mut name = None;
     let mut exec = None;
@@ -116,14 +124,14 @@ fn scan_directory(path: &Path, kind: SessionKind) -> (Vec<Session>, Vec<String>)
 }
 
 fn discover_sessions() -> (Vec<Session>, Vec<String>) {
-    let (mut wayland, mut warnings) =
+    let (mut sessions, mut warnings) =
         scan_directory(Path::new("/usr/share/wayland-sessions"), SessionKind::Wayland);
-    let (mut x11, x11_warnings) =
+    let (x11_sessions, x11_warnings) =
         scan_directory(Path::new("/usr/share/xsessions"), SessionKind::X11);
-    wayland.extend(x11);
+    sessions.extend(x11_sessions);
     warnings.extend(x11_warnings);
-    wayland.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    (wayland, warnings)
+    sessions.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    (sessions, warnings)
 }
 
 fn print_help() {
@@ -150,12 +158,16 @@ fn run() -> Result<(), String> {
                 println!("No desktop sessions found.");
                 println!("Looked in /usr/share/wayland-sessions and /usr/share/xsessions.");
             } else {
-                println!("{:<10}  {:<28}  {}", "TYPE", "SESSION", "DESKTOP FILE");
+                println!(
+                    "{:<10}  {:<24}  {:<32}  {}",
+                    "TYPE", "SESSION", "COMMAND", "DESKTOP FILE"
+                );
                 for session in &sessions {
                     println!(
-                        "{:<10}  {:<28}  {}",
+                        "{:<10}  {:<24}  {:<32}  {}",
                         session.kind.label(),
                         session.name,
+                        session.exec,
                         session.file.display()
                     );
                 }
@@ -203,58 +215,33 @@ mod tests {
     fn parses_a_wayland_desktop_entry() {
         let path = Path::new("/tmp/example.desktop");
         let input = "[Desktop Entry]\nName=Example Desktop\nExec=example-session\nType=Application\n";
-        let parsed = parse_contents_for_test(input, path, SessionKind::Wayland).unwrap();
-        assert_eq!(parsed.unwrap().name, "Example Desktop");
+        let parsed = parse_desktop_contents(input, path, SessionKind::Wayland).unwrap();
+        let session = parsed.unwrap();
+        assert_eq!(session.name, "Example Desktop");
+        assert_eq!(session.exec, "example-session");
+        assert_eq!(session.kind, SessionKind::Wayland);
     }
 
     #[test]
     fn ignores_hidden_entries() {
         let path = Path::new("/tmp/hidden.desktop");
         let input = "[Desktop Entry]\nName=Hidden\nExec=hidden-session\nHidden=true\n";
-        assert!(parse_contents_for_test(input, path, SessionKind::X11).unwrap().is_none());
+        assert!(parse_desktop_contents(input, path, SessionKind::X11)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn ignores_entries_outside_desktop_entry_group() {
+        let path = Path::new("/tmp/other-group.desktop");
+        let input = "[Other]\nName=Wrong Group\nExec=wrong\n";
+        assert!(parse_desktop_contents(input, path, SessionKind::X11).is_err());
     }
 
     #[test]
     fn rejects_missing_exec() {
         let path = Path::new("/tmp/broken.desktop");
         let input = "[Desktop Entry]\nName=Broken\n";
-        assert!(parse_contents_for_test(input, path, SessionKind::X11).is_err());
-    }
-
-    fn parse_contents_for_test(
-        contents: &str,
-        path: &Path,
-        kind: SessionKind,
-    ) -> Result<Option<Session>, String> {
-        let mut in_entry = false;
-        let mut name = None;
-        let mut exec = None;
-        let mut hidden = false;
-        let mut no_display = false;
-        for raw in contents.lines() {
-            let line = raw.trim();
-            if line.starts_with('[') && line.ends_with(']') {
-                in_entry = line == "[Desktop Entry]";
-            } else if in_entry {
-                if let Some((key, value)) = line.split_once('=') {
-                    match key.trim() {
-                        "Name" => name = Some(value.trim().to_owned()),
-                        "Exec" => exec = Some(value.trim().to_owned()),
-                        "Hidden" => hidden = value.trim() == "true",
-                        "NoDisplay" => no_display = value.trim() == "true",
-                        _ => {}
-                    }
-                }
-            }
-        }
-        if hidden || no_display {
-            return Ok(None);
-        }
-        let name = name.unwrap_or_default();
-        let exec = exec.unwrap_or_default();
-        if name.is_empty() || exec.is_empty() {
-            return Err("missing Name or Exec".to_owned());
-        }
-        Ok(Some(Session { name, exec, kind, file: path.to_path_buf() }))
+        assert!(parse_desktop_contents(input, path, SessionKind::X11).is_err());
     }
 }
