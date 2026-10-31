@@ -437,20 +437,15 @@ fn build_window(app: &gtk::Application) {
     heading.add_css_class("tdm-accent");
     heading.set_halign(gtk::Align::Start);
 
+    let username = gtk::Entry::new();
+    username.set_placeholder_text(Some("Your username"));
+    username.set_hexpand(true);
     let username_label = gtk::Label::new(Some("_USERNAME"));
     username_label.set_use_underline(true);
     username_label.set_mnemonic_widget(Some(&username));
     username_label.set_halign(gtk::Align::Start);
     username_label.add_css_class("tdm-subtitle");
-    let username = gtk::Entry::new();
-    username.set_placeholder_text(Some("Your username"));
-    username.set_hexpand(true);
 
-    let session_label = gtk::Label::new(Some("_DESKTOP SESSION"));
-    session_label.set_use_underline(true);
-    session_label.set_mnemonic_widget(Some(&session_dropdown));
-    session_label.set_halign(gtk::Align::Start);
-    session_label.add_css_class("tdm-subtitle");
     let (sessions, session_warnings) = session::discover_sessions();
     let session_labels: Vec<String> = sessions
         .iter()
@@ -464,6 +459,11 @@ fn build_window(app: &gtk::Application) {
     };
     session_dropdown.set_hexpand(true);
     session_dropdown.set_sensitive(!sessions.is_empty());
+    let session_label = gtk::Label::new(Some("_DESKTOP SESSION"));
+    session_label.set_use_underline(true);
+    session_label.set_mnemonic_widget(Some(&session_dropdown));
+    session_label.set_halign(gtk::Align::Start);
+    session_label.add_css_class("tdm-subtitle");
     let sessions = Rc::new(sessions);
 
     let prompt_label = gtk::Label::new(Some("AUTHENTICATION"));
