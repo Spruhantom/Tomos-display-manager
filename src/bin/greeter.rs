@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::cell::{Cell, RefCell};
 use std::env;
 use std::io::{Read, Write};
+use std::process::Command;
 use std::os::unix::net::UnixStream;
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -66,7 +67,93 @@ button:disabled {
   color: #ffc66d;
   font-size: 12px;
 }
+*:focus {
+  outline: 3px solid #37d9ff;
+  outline-offset: 2px;
+}
 "#;
+
+const LIGHT_CSS: &str = r#"
+window { background: #f5f7fa; color: #17212b; }
+.tdm-title { color: #10202d; font-size: 30px; font-weight: 800; letter-spacing: 2px; }
+.tdm-subtitle { color: #40566a; font-size: 13px; }
+.tdm-panel { background: #ffffff; border: 1px solid #8ca2b5; border-radius: 18px; padding: 28px; }
+.tdm-accent { color: #006b88; font-weight: 700; }
+entry, dropdown { background: #ffffff; color: #17212b; border: 1px solid #536b7e; border-radius: 9px; padding: 10px; min-height: 22px; }
+button { background: #dceef5; color: #10202d; border: 1px solid #28627a; border-radius: 9px; padding: 10px 18px; font-weight: 700; }
+button:hover { background: #c3e3ef; }
+button:disabled { background: #e3e7eb; color: #59636d; border-color: #89939d; }
+.tdm-status { color: #714500; font-size: 12px; }
+*:focus { outline: 3px solid #005f86; outline-offset: 2px; }
+"#;
+
+const HIGH_CONTRAST_CSS: &str = r#"
+window { background: #000000; color: #ffffff; }
+.tdm-title { color: #ffffff; font-size: 32px; font-weight: 900; }
+.tdm-subtitle { color: #ffffff; font-size: 15px; }
+.tdm-panel { background: #000000; border: 2px solid #ffffff; border-radius: 8px; padding: 28px; }
+.tdm-accent { color: #ffff00; font-weight: 900; }
+entry, dropdown { background: #000000; color: #ffffff; border: 2px solid #ffffff; border-radius: 4px; padding: 10px; min-height: 24px; }
+button { background: #000000; color: #ffff00; border: 2px solid #ffff00; border-radius: 4px; padding: 10px 18px; font-weight: 900; }
+button:hover { background: #222222; }
+button:disabled { background: #000000; color: #aaaaaa; border-color: #aaaaaa; }
+.tdm-status { color: #ffff00; font-size: 14px; }
+*:focus { outline: 4px solid #00ffff; outline-offset: 3px; }
+"#;
+
+fn configured_css() -> &'static str {
+    let configured = env::var("TDM_THEME").ok().or_else(|| {
+        std::fs::read_to_string("/etc/tdm/greeter.conf").ok().and_then(|contents| {
+            contents.lines().find_map(|line| {
+                let (key, value) = line.split_once('=')?;
+                (key.trim() == "theme").then(|| value.trim().to_owned())
+            })
+        })
+    });
+    match configured.as_deref().unwrap_or("dark") {
+        "light" => LIGHT_CSS,
+        "high-contrast" => HIGH_CONTRAST_CSS,
+        _ => CSS,
+    }
+}
+
+fn connect_power_control(
+    button: &gtk::Button,
+    window: &gtk::ApplicationWindow,
+    status: &gtk::Label,
+    action: &'static str,
+    description: &'static str,
+) {
+    let parent = window.clone();
+    let status_label = status.clone();
+    button.connect_clicked(move |_| {
+        let dialog = gtk::MessageDialog::builder()
+            .transient_for(&parent)
+            .modal(true)
+            .message_type(gtk::MessageType::Warning)
+            .buttons(gtk::ButtonsType::OkCancel)
+            .text(description)
+            .build();
+        let status_label = status_label.clone();
+        dialog.connect_response(move |dialog, response| {
+            if response == gtk::ResponseType::Ok {
+                match Command::new("loginctl").arg(action).status() {
+                    Ok(result) if result.success() => {
+                        status_label.set_text("Power request accepted by systemd-logind.");
+                    }
+                    Ok(result) => {
+                        status_label.set_text(&format!("Power request was denied (exit status {}). Check system authorization.", result));
+                    }
+                    Err(error) => {
+                        status_label.set_text(&format!("Could not request power action: {error}"));
+                    }
+                }
+            }
+            dialog.close();
+        });
+        dialog.present();
+    });
+}
 
 enum UiEvent {
     Prompt { message: String, secret: bool },
@@ -289,7 +376,7 @@ fn run_authentication(
 
 fn build_window(app: &gtk::Application) {
     let provider = gtk::CssProvider::new();
-    provider.load_from_data(CSS);
+    provider.load_from_data(configured_css());
     if let Some(display) = gtk::gdk::Display::default() {
         gtk::style_context_add_provider_for_display(
             &display,
@@ -528,9 +615,25 @@ fn build_window(app: &gtk::Application) {
     let footer = gtk::Label::new(Some("TDM 0.0.6  •  WAYLAND / X11 SESSION LAUNCHING"));
     footer.add_css_class("tdm-subtitle");
 
+    let power_actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    power_actions.set_halign(gtk::Align::Center);
+    let poweroff = gtk::Button::with_label("Power off…");
+    let reboot = gtk::Button::with_label("Restart…");
+    let suspend = gtk::Button::with_label("Suspend…");
+    poweroff.set_tooltip_text(Some("Request system power off"));
+    reboot.set_tooltip_text(Some("Request system restart"));
+    suspend.set_tooltip_text(Some("Request system suspend"));
+    connect_power_control(&poweroff, &window, &status, "poweroff", "Power off this computer?");
+    connect_power_control(&reboot, &window, &status, "reboot", "Restart this computer?");
+    connect_power_control(&suspend, &window, &status, "suspend", "Suspend this computer?");
+    power_actions.append(&poweroff);
+    power_actions.append(&reboot);
+    power_actions.append(&suspend);
+
     outer.append(&brand);
     outer.append(&subtitle);
     outer.append(&panel);
+    outer.append(&power_actions);
     outer.append(&footer);
     window.set_child(Some(&outer));
     window.present();
