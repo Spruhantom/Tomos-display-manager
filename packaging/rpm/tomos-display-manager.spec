@@ -4,7 +4,7 @@ Release:        1%{?dist}
 Summary:        Lightweight Rust display manager and GTK4 greetd greeter
 License:        MIT
 URL:            https://github.com/Spruhantom/Tomos-display-manager
-Source0:        %{url}/archive/refs/heads/main.tar.gz
+Source0:        https://github.com/Spruhantom/Tomos-display-manager/archive/refs/heads/main.tar.gz
 BuildRequires:  cargo
 BuildRequires:  rust
 BuildRequires:  pkgconfig(gtk4)
@@ -41,5 +41,5 @@ install -D -m644 docs/POWER-AND-THEMES.md %{buildroot}%{_docdir}/%{name}/POWER-A
 %license LICENSE
 
 %changelog
-* Sat Oct 31 2026 TomOS contributors <maintainers@tomos.example> - 0.0.6-1
+* Sat Oct 31 2026 TomOS contributors <noreply@github.com> - 0.0.6-1
 - Initial experimental package.
