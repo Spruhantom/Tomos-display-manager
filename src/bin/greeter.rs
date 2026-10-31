@@ -433,9 +433,7 @@ fn build_window(app: &gtk::Application) {
         status_for_login.set_text("Connecting to greetd…");
 
         let events = event_tx.clone();
-        thread::spawn(move || {
-            run_authentication(name, selected_session, events, reply_rx)
-        });
+        thread::spawn(move || run_authentication(name, selected_session, events, reply_rx));
     });
 
     let sender_for_cancel = reply_sender.clone();
@@ -471,7 +469,8 @@ fn build_window(app: &gtk::Application) {
                     }));
                     login_for_events.set_label("Send response");
                     login_for_events.set_sensitive(true);
-                    status_for_events.set_text("Your system authentication service requested a response.");
+                    status_for_events
+                        .set_text("Your system authentication service requested a response.");
                     prompt_for_events.grab_focus();
                 }
                 UiEvent::Status(message) => {
@@ -553,7 +552,8 @@ mod greetd_protocol_tests {
 
     #[test]
     fn decodes_secret_authentication_prompt_with_protocol_field_names() {
-        let json = br#"{"type":"auth_message","auth_message_type":"secret","auth_message":"Password:"}"#;
+        let json =
+            br#"{"type":"auth_message","auth_message_type":"secret","auth_message":"Password:"}"#;
         let mut frame = Vec::new();
         frame.extend_from_slice(&(json.len() as u32).to_ne_bytes());
         frame.extend_from_slice(json);
@@ -581,8 +581,7 @@ mod greetd_protocol_tests {
 
         let bytes = frame.into_inner();
         let length = u32::from_ne_bytes(bytes[..4].try_into().unwrap()) as usize;
-        let request: serde_json::Value =
-            serde_json::from_slice(&bytes[4..4 + length]).unwrap();
+        let request: serde_json::Value = serde_json::from_slice(&bytes[4..4 + length]).unwrap();
         assert_eq!(request["type"], "start_session");
         assert_eq!(request["cmd"][0], "sway");
         assert_eq!(request["env"][0], "XDG_SESSION_TYPE=wayland");
