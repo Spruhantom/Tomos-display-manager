@@ -103,17 +103,24 @@ pub fn parse_desktop_contents(
     }
 
     for argument in &mut command {
-        if argument.contains('%') {
-            if argument.contains("%%") {
-                *argument = argument.replace("%%", "%");
-            }
-            if argument.contains('%') {
-                return Err(format!(
-                    "{}: unsupported desktop-entry field code in Exec",
-                    path.display()
-                ));
+        let mut expanded = String::with_capacity(argument.len());
+        let mut characters = argument.chars();
+        while let Some(character) = characters.next() {
+            if character == '%' {
+                match characters.next() {
+                    Some('%') => expanded.push('%'),
+                    _ => {
+                        return Err(format!(
+                            "{}: unsupported desktop-entry field code in Exec",
+                            path.display()
+                        ));
+                    }
+                }
+            } else {
+                expanded.push(character);
             }
         }
+        *argument = expanded;
     }
 
     Ok(Some(Session {
