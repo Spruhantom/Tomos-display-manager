@@ -50,18 +50,24 @@ esac
 if ! has rustup; then
     say "Installing the official Rust toolchain for the current user..."
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
-    export PATH="$HOME/.cargo/bin:$PATH"
-else
-    export PATH="$HOME/.cargo/bin:$PATH"
+fi
+export PATH="$HOME/.cargo/bin:$PATH"
+
+has rustup || fail "rustup was not installed or is not available in PATH."
+if ! has cargo || ! has rustc; then
+    say "Installing the stable Rust toolchain..."
+    rustup toolchain install stable --profile minimal
+    rustup default stable
 fi
 
-has cargo || fail "Rust installation did not provide cargo."
 RUST_VERSION="$(rustc --version | awk '{print $2}')"
 if [[ "$(printf '%s\n' 1.83.0 "$RUST_VERSION" | sort -V | head -n1)" != "1.83.0" ]]; then
     say "Updating Rust to stable (TDM requires Rust 1.83 or newer)..."
     rustup update stable
     rustup default stable
 fi
+has cargo || fail "Rust installation did not provide cargo."
+has rustc || fail "Rust installation did not provide rustc."
 
 has git || fail "git is required."
 say "Downloading TomOS Display Manager source..."
