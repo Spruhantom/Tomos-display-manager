@@ -790,10 +790,8 @@ mod greetd_protocol_tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let socket_path = std::env::temp_dir().join(format!(
-            "tdm-greetd-{}-{nonce}.sock",
-            std::process::id()
-        ));
+        let socket_path =
+            std::env::temp_dir().join(format!("tdm-greetd-{}-{nonce}.sock", std::process::id()));
         let listener = UnixListener::bind(&socket_path).unwrap();
         let server = thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
