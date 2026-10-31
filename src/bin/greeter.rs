@@ -5,6 +5,7 @@ use std::cell::{Cell, RefCell};
 use std::env;
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
+use std::process::Command;
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
@@ -66,7 +67,100 @@ button:disabled {
   color: #ffc66d;
   font-size: 12px;
 }
+*:focus {
+  outline: 3px solid #37d9ff;
+  outline-offset: 2px;
+}
 "#;
+
+const LIGHT_CSS: &str = r#"
+window { background: #f5f7fa; color: #17212b; }
+.tdm-title { color: #10202d; font-size: 30px; font-weight: 800; letter-spacing: 2px; }
+.tdm-subtitle { color: #40566a; font-size: 13px; }
+.tdm-panel { background: #ffffff; border: 1px solid #8ca2b5; border-radius: 18px; padding: 28px; }
+.tdm-accent { color: #006b88; font-weight: 700; }
+entry, dropdown { background: #ffffff; color: #17212b; border: 1px solid #536b7e; border-radius: 9px; padding: 10px; min-height: 22px; }
+button { background: #dceef5; color: #10202d; border: 1px solid #28627a; border-radius: 9px; padding: 10px 18px; font-weight: 700; }
+button:hover { background: #c3e3ef; }
+button:disabled { background: #e3e7eb; color: #59636d; border-color: #89939d; }
+.tdm-status { color: #714500; font-size: 12px; }
+*:focus { outline: 3px solid #005f86; outline-offset: 2px; }
+"#;
+
+const HIGH_CONTRAST_CSS: &str = r#"
+window { background: #000000; color: #ffffff; }
+.tdm-title { color: #ffffff; font-size: 32px; font-weight: 900; }
+.tdm-subtitle { color: #ffffff; font-size: 15px; }
+.tdm-panel { background: #000000; border: 2px solid #ffffff; border-radius: 8px; padding: 28px; }
+.tdm-accent { color: #ffff00; font-weight: 900; }
+entry, dropdown { background: #000000; color: #ffffff; border: 2px solid #ffffff; border-radius: 4px; padding: 10px; min-height: 24px; }
+button { background: #000000; color: #ffff00; border: 2px solid #ffff00; border-radius: 4px; padding: 10px 18px; font-weight: 900; }
+button:hover { background: #222222; }
+button:disabled { background: #000000; color: #aaaaaa; border-color: #aaaaaa; }
+.tdm-status { color: #ffff00; font-size: 14px; }
+*:focus { outline: 4px solid #00ffff; outline-offset: 3px; }
+"#;
+
+fn css_for_theme(theme: &str) -> &'static str {
+    match theme {
+        "light" => LIGHT_CSS,
+        "high-contrast" => HIGH_CONTRAST_CSS,
+        _ => CSS,
+    }
+}
+
+fn configured_css() -> &'static str {
+    let configured = env::var("TDM_THEME").ok().or_else(|| {
+        std::fs::read_to_string("/etc/tdm/greeter.conf")
+            .ok()
+            .and_then(|contents| {
+                contents.lines().find_map(|line| {
+                    let (key, value) = line.split_once('=')?;
+                    (key.trim() == "theme").then(|| value.trim().to_owned())
+                })
+            })
+    });
+    css_for_theme(configured.as_deref().unwrap_or("dark"))
+}
+
+fn connect_power_control(
+    button: &gtk::Button,
+    window: &gtk::ApplicationWindow,
+    status: &gtk::Label,
+    action: &'static str,
+    description: &'static str,
+) {
+    let parent = window.clone();
+    let status_label = status.clone();
+    button.connect_clicked(move |_| {
+        let dialog = gtk::Dialog::builder()
+            .transient_for(&parent)
+            .modal(true)
+            .title("Confirm power action")
+            .build();
+        dialog.add_button("Cancel", gtk::ResponseType::Cancel);
+        dialog.add_button("Continue", gtk::ResponseType::Ok);
+        dialog.content_area().append(&gtk::Label::new(Some(description)));
+        let status_label = status_label.clone();
+        dialog.connect_response(move |dialog, response| {
+            if response == gtk::ResponseType::Ok {
+                match Command::new("loginctl").arg(action).status() {
+                    Ok(result) if result.success() => {
+                        status_label.set_text("Power request accepted by systemd-logind.");
+                    }
+                    Ok(result) => {
+                        status_label.set_text(&format!("Power request was denied (exit status {}). Check system authorization.", result));
+                    }
+                    Err(error) => {
+                        status_label.set_text(&format!("Could not request power action: {error}"));
+                    }
+                }
+            }
+            dialog.close();
+        });
+        dialog.present();
+    });
+}
 
 enum UiEvent {
     Prompt { message: String, secret: bool },
@@ -167,10 +261,27 @@ fn run_authentication(
     events: Sender<UiEvent>,
     replies: Receiver<UserReply>,
 ) {
+    let socket = match env::var("GREETD_SOCK") {
+        Ok(socket) => socket,
+        Err(_) => {
+            let _ = events.send(UiEvent::Failed(
+                "GREETD_SOCK is not set. Start TDM through greetd.".to_owned(),
+            ));
+            return;
+        }
+    };
+    run_authentication_at(&socket, username, selected_session, events, replies);
+}
+
+fn run_authentication_at(
+    socket: &str,
+    username: String,
+    selected_session: session::Session,
+    events: Sender<UiEvent>,
+    replies: Receiver<UserReply>,
+) {
     let result = (|| -> Result<AuthOutcome, String> {
-        let socket = env::var("GREETD_SOCK")
-            .map_err(|_| "GREETD_SOCK is not set. Start TDM through greetd.".to_owned())?;
-        let mut stream = UnixStream::connect(&socket)
+        let mut stream = UnixStream::connect(socket)
             .map_err(|error| format!("Cannot connect to greetd: {error}"))?;
         stream
             .set_read_timeout(Some(Duration::from_secs(120)))
@@ -289,7 +400,7 @@ fn run_authentication(
 
 fn build_window(app: &gtk::Application) {
     let provider = gtk::CssProvider::new();
-    provider.load_from_data(CSS);
+    provider.load_from_data(configured_css());
     if let Some(display) = gtk::gdk::Display::default() {
         gtk::style_context_add_provider_for_display(
             &display,
@@ -326,16 +437,15 @@ fn build_window(app: &gtk::Application) {
     heading.add_css_class("tdm-accent");
     heading.set_halign(gtk::Align::Start);
 
-    let username_label = gtk::Label::new(Some("USERNAME"));
-    username_label.set_halign(gtk::Align::Start);
-    username_label.add_css_class("tdm-subtitle");
     let username = gtk::Entry::new();
     username.set_placeholder_text(Some("Your username"));
     username.set_hexpand(true);
+    let username_label = gtk::Label::new(Some("_USERNAME"));
+    username_label.set_use_underline(true);
+    username_label.set_mnemonic_widget(Some(&username));
+    username_label.set_halign(gtk::Align::Start);
+    username_label.add_css_class("tdm-subtitle");
 
-    let session_label = gtk::Label::new(Some("DESKTOP SESSION"));
-    session_label.set_halign(gtk::Align::Start);
-    session_label.add_css_class("tdm-subtitle");
     let (sessions, session_warnings) = session::discover_sessions();
     let session_labels: Vec<String> = sessions
         .iter()
@@ -349,6 +459,11 @@ fn build_window(app: &gtk::Application) {
     };
     session_dropdown.set_hexpand(true);
     session_dropdown.set_sensitive(!sessions.is_empty());
+    let session_label = gtk::Label::new(Some("_DESKTOP SESSION"));
+    session_label.set_use_underline(true);
+    session_label.set_mnemonic_widget(Some(&session_dropdown));
+    session_label.set_halign(gtk::Align::Start);
+    session_label.add_css_class("tdm-subtitle");
     let sessions = Rc::new(sessions);
 
     let prompt_label = gtk::Label::new(Some("AUTHENTICATION"));
@@ -374,6 +489,8 @@ fn build_window(app: &gtk::Application) {
     let login = gtk::Button::with_label("Sign in");
     login.add_css_class("suggested-action");
     login.set_hexpand(true);
+    login.set_receives_default(true);
+    window.set_default_widget(Some(&login));
     login.set_sensitive(!sessions.is_empty());
 
     let cancel = gtk::Button::with_label("Cancel");
@@ -461,6 +578,11 @@ fn build_window(app: &gtk::Application) {
                 UiEvent::Prompt { message, secret } => {
                     prompt_label_for_events.set_text(&message);
                     prompt_for_events.set_visibility(!secret);
+                    prompt_for_events.set_input_purpose(if secret {
+                        gtk::InputPurpose::Password
+                    } else {
+                        gtk::InputPurpose::FreeForm
+                    });
                     prompt_for_events.set_text("");
                     prompt_for_events.set_placeholder_text(Some(if secret {
                         "Secret response"
@@ -528,9 +650,43 @@ fn build_window(app: &gtk::Application) {
     let footer = gtk::Label::new(Some("TDM 0.0.6  •  WAYLAND / X11 SESSION LAUNCHING"));
     footer.add_css_class("tdm-subtitle");
 
+    let power_actions = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    power_actions.set_halign(gtk::Align::Center);
+    let poweroff = gtk::Button::with_label("Power off…");
+    let reboot = gtk::Button::with_label("Restart…");
+    let suspend = gtk::Button::with_label("Suspend…");
+    poweroff.set_tooltip_text(Some("Request system power off"));
+    reboot.set_tooltip_text(Some("Request system restart"));
+    suspend.set_tooltip_text(Some("Request system suspend"));
+    connect_power_control(
+        &poweroff,
+        &window,
+        &status,
+        "poweroff",
+        "Power off this computer?",
+    );
+    connect_power_control(
+        &reboot,
+        &window,
+        &status,
+        "reboot",
+        "Restart this computer?",
+    );
+    connect_power_control(
+        &suspend,
+        &window,
+        &status,
+        "suspend",
+        "Suspend this computer?",
+    );
+    power_actions.append(&poweroff);
+    power_actions.append(&reboot);
+    power_actions.append(&suspend);
+
     outer.append(&brand);
     outer.append(&subtitle);
     outer.append(&panel);
+    outer.append(&power_actions);
     outer.append(&footer);
     window.set_child(Some(&outer));
     window.present();
@@ -549,6 +705,14 @@ fn main() -> gtk::glib::ExitCode {
 mod greetd_protocol_tests {
     use super::*;
     use std::io::Cursor;
+
+    #[test]
+    fn selects_supported_themes_and_defaults_unknown_values_to_dark() {
+        assert_eq!(css_for_theme("dark"), CSS);
+        assert_eq!(css_for_theme("light"), LIGHT_CSS);
+        assert_eq!(css_for_theme("high-contrast"), HIGH_CONTRAST_CSS);
+        assert_eq!(css_for_theme("unknown"), CSS);
+    }
 
     #[test]
     fn decodes_secret_authentication_prompt_with_protocol_field_names() {
@@ -594,4 +758,108 @@ mod greetd_protocol_tests {
     }
 
     const MAX_RESPONSE_TEST: u32 = 1024 * 1024;
+
+    fn read_mock_request(stream: &mut UnixStream) -> serde_json::Value {
+        let mut length = [0_u8; 4];
+        stream.read_exact(&mut length).unwrap();
+        let length = u32::from_ne_bytes(length) as usize;
+        let mut payload = vec![0_u8; length];
+        stream.read_exact(&mut payload).unwrap();
+        serde_json::from_slice(&payload).unwrap()
+    }
+
+    fn write_mock_response(stream: &mut UnixStream, response: serde_json::Value) {
+        let payload = serde_json::to_vec(&response).unwrap();
+        stream
+            .write_all(&(payload.len() as u32).to_ne_bytes())
+            .unwrap();
+        stream.write_all(&payload).unwrap();
+        stream.flush().unwrap();
+    }
+
+    #[test]
+    fn completes_full_greetd_ipc_conversation_with_mock_server() {
+        use std::os::unix::net::UnixListener;
+        use std::path::PathBuf;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let socket_path =
+            std::env::temp_dir().join(format!("tdm-greetd-{}-{nonce}.sock", std::process::id()));
+        let listener = UnixListener::bind(&socket_path).unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+
+            let create = read_mock_request(&mut stream);
+            assert_eq!(create["type"], "create_session");
+            assert_eq!(create["username"], "tdm-test-user");
+            write_mock_response(
+                &mut stream,
+                serde_json::json!({
+                    "type": "auth_message",
+                    "auth_message_type": "secret",
+                    "auth_message": "Password:"
+                }),
+            );
+
+            let answer = read_mock_request(&mut stream);
+            assert_eq!(answer["type"], "post_auth_message_response");
+            assert_eq!(answer["response"], "test-only-secret");
+            write_mock_response(&mut stream, serde_json::json!({"type": "success"}));
+
+            let start = read_mock_request(&mut stream);
+            assert_eq!(start["type"], "start_session");
+            assert_eq!(start["cmd"], serde_json::json!(["/usr/bin/true"]));
+            assert_eq!(
+                start["env"],
+                serde_json::json!(["XDG_SESSION_TYPE=wayland"])
+            );
+            write_mock_response(&mut stream, serde_json::json!({"type": "success"}));
+        });
+
+        let selected_session = session::Session {
+            name: "Test Wayland".to_owned(),
+            exec: "/usr/bin/true".to_owned(),
+            command: vec!["/usr/bin/true".to_owned()],
+            kind: session::SessionKind::Wayland,
+            file: PathBuf::from("/tmp/tdm-test.desktop"),
+        };
+        let (event_tx, event_rx) = mpsc::channel();
+        let (reply_tx, reply_rx) = mpsc::channel();
+        let socket_string = socket_path.to_string_lossy().into_owned();
+        let client = thread::spawn(move || {
+            run_authentication_at(
+                &socket_string,
+                "tdm-test-user".to_owned(),
+                selected_session,
+                event_tx,
+                reply_rx,
+            );
+        });
+
+        match event_rx.recv_timeout(Duration::from_secs(5)).unwrap() {
+            UiEvent::Prompt { message, secret } => {
+                assert_eq!(message, "Password:");
+                assert!(secret);
+            }
+            _ => panic!("expected greetd password prompt"),
+        }
+        reply_tx
+            .send(UserReply::Answer(Some("test-only-secret".to_owned())))
+            .unwrap();
+        match event_rx.recv_timeout(Duration::from_secs(5)).unwrap() {
+            UiEvent::SessionStarted => {}
+            _ => panic!("expected session-started event"),
+        }
+
+        client.join().unwrap();
+        server.join().unwrap();
+        let _ = std::fs::remove_file(socket_path);
+    }
 }

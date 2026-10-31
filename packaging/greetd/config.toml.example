@@ -1,0 +1,8 @@
+# Example only. Review the greeter user and terminal for your system.
+# Copy into /etc/greetd/config.toml only after installing greetd and TDM.
+[terminal]
+# vt = 1
+
+[default_session]
+command = "/usr/bin/tdm-greeter"
+user = "_greetd"

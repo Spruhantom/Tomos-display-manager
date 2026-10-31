@@ -19,6 +19,7 @@ has curl || fail "curl is required."
 if [[ ! -r /etc/os-release ]]; then
     fail "Cannot identify this Linux distribution."
 fi
+# shellcheck disable=SC1091
 . /etc/os-release
 ID_LIKE="${ID_LIKE:-}"
 DISTRO="${ID:-unknown}"

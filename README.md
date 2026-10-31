@@ -80,6 +80,27 @@ TDM delegates authentication to greetd and the host's PAM stack. The greetd IPC 
 
 After greetd reports authentication success, TDM sends `start_session` with the selected desktop command as a JSON argument array. It does not use `sh -c` or shell interpolation. The request adds `XDG_SESSION_TYPE=wayland` or `XDG_SESSION_TYPE=x11` to the environment greetd creates from PAM. greetd starts the session after the greeter process exits.
 
+## Packaging and greetd setup
+
+Experimental packaging recipes are provided under `packaging/` for Arch,
+Debian-family, and RPM-family systems. They are starting points, not signed
+or release-validated packages. Build them in clean distribution VMs and
+verify dependencies before distributing them.
+
+An example greetd configuration is installed as documentation by the package
+recipes. Review it before copying it to `/etc/greetd/config.toml`. The example
+uses the `_greetd` account; account names and service setup vary by distro.
+TDM uses the distribution-provided `greetd.service`; it does not install a
+competing display-manager service or enable greetd automatically.
+
+The greeter has dark, light, and high-contrast themes, plus confirmed power
+controls routed through `loginctl`/systemd-logind. See [power and themes](docs/POWER-AND-THEMES.md),
+[systemd setup](docs/SYSTEMD.md), and the [initial security review](docs/SECURITY-REVIEW.md).
+These features still require testing on real greetd sessions and distro images.
+
+See [system testing](docs/TESTING.md) and the [release checklist](docs/RELEASE-CHECKLIST.md)
+before using TDM as a daily login manager.
+
 ## Roadmap
 
 - [x] Rust project and CLI foundation
@@ -94,10 +115,10 @@ After greetd reports authentication success, TDM sends `start_session` with the 
 - [x] Safe argv-based session command parsing (no shell)
 - [ ] Automated end-to-end tests against greetd and PAM
 - [ ] Test Wayland and X11 startup on supported distributions
-- [ ] Functional power controls
-- [ ] Theme configuration and accessibility review
-- [ ] systemd integration and distro packages
-- [ ] Security review and installation testing
+- [x] Initial power-off, restart, and suspend controls with confirmation (logind authorization still needs distro testing) with logind authorization and confirmation
+- [ ] Configurable themes and completed accessibility review
+- [ ] Verified systemd/greetd integration and release-ready distro packages
+- [ ] Independent security review and clean-VM installation testing
 
 ## Development
 

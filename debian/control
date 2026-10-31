@@ -1,0 +1,16 @@
+Source: tomos-display-manager
+Section: x11
+Priority: optional
+Maintainer: TomOS contributors <noreply@github.com>
+Build-Depends: debhelper-compat (= 13), cargo, rustc (>= 1.83), pkg-config, libgtk-4-dev
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+
+Package: tomos-display-manager
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, libgtk-4-1
+Recommends: greetd
+Description: Lightweight Rust display manager and GTK4 greetd greeter
+ TDM discovers installed Wayland and X11 desktop sessions and provides
+ a GTK4 greeter that delegates authentication to greetd and the host PAM
+ configuration. It is experimental and does not configure or enable greetd.
