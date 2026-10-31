@@ -119,7 +119,7 @@ fn scan_directory(path: &Path, kind: SessionKind) -> (Vec<Session>, Vec<String>)
         }
     }
 
-    sessions.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    sessions.sort_by_key(|session| session.name.to_lowercase());
     (sessions, warnings)
 }
 
@@ -132,7 +132,7 @@ fn discover_sessions() -> (Vec<Session>, Vec<String>) {
         scan_directory(Path::new("/usr/share/xsessions"), SessionKind::X11);
     sessions.extend(x11_sessions);
     warnings.extend(x11_warnings);
-    sessions.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    sessions.sort_by_key(|session| session.name.to_lowercase());
     (sessions, warnings)
 }
 
@@ -161,8 +161,8 @@ fn run() -> Result<(), String> {
                 println!("Looked in /usr/share/wayland-sessions and /usr/share/xsessions.");
             } else {
                 println!(
-                    "{:<10}  {:<24}  {:<32}  {}",
-                    "TYPE", "SESSION", "COMMAND", "DESKTOP FILE"
+                    "{:<10}  {:<24}  {:<32}  DESKTOP FILE",
+                    "TYPE", "SESSION", "COMMAND"
                 );
                 for session in &sessions {
                     println!(
