@@ -259,10 +259,27 @@ fn run_authentication(
     events: Sender<UiEvent>,
     replies: Receiver<UserReply>,
 ) {
+    let socket = match env::var("GREETD_SOCK") {
+        Ok(socket) => socket,
+        Err(_) => {
+            let _ = events.send(UiEvent::Failed(
+                "GREETD_SOCK is not set. Start TDM through greetd.".to_owned(),
+            ));
+            return;
+        }
+    };
+    run_authentication_at(&socket, username, selected_session, events, replies);
+}
+
+fn run_authentication_at(
+    socket: &str,
+    username: String,
+    selected_session: session::Session,
+    events: Sender<UiEvent>,
+    replies: Receiver<UserReply>,
+) {
     let result = (|| -> Result<AuthOutcome, String> {
-        let socket = env::var("GREETD_SOCK")
-            .map_err(|_| "GREETD_SOCK is not set. Start TDM through greetd.".to_owned())?;
-        let mut stream = UnixStream::connect(&socket)
+        let mut stream = UnixStream::connect(socket)
             .map_err(|error| format!("Cannot connect to greetd: {error}"))?;
         stream
             .set_read_timeout(Some(Duration::from_secs(120)))
@@ -721,4 +738,110 @@ mod greetd_protocol_tests {
     }
 
     const MAX_RESPONSE_TEST: u32 = 1024 * 1024;
+
+    fn read_mock_request(stream: &mut UnixStream) -> serde_json::Value {
+        let mut length = [0_u8; 4];
+        stream.read_exact(&mut length).unwrap();
+        let length = u32::from_ne_bytes(length) as usize;
+        let mut payload = vec![0_u8; length];
+        stream.read_exact(&mut payload).unwrap();
+        serde_json::from_slice(&payload).unwrap()
+    }
+
+    fn write_mock_response(stream: &mut UnixStream, response: serde_json::Value) {
+        let payload = serde_json::to_vec(&response).unwrap();
+        stream
+            .write_all(&(payload.len() as u32).to_ne_bytes())
+            .unwrap();
+        stream.write_all(&payload).unwrap();
+        stream.flush().unwrap();
+    }
+
+    #[test]
+    fn completes_full_greetd_ipc_conversation_with_mock_server() {
+        use std::os::unix::net::UnixListener;
+        use std::path::PathBuf;
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let socket_path = std::env::temp_dir().join(format!(
+            "tdm-greetd-{}-{nonce}.sock",
+            std::process::id()
+        ));
+        let listener = UnixListener::bind(&socket_path).unwrap();
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+
+            let create = read_mock_request(&mut stream);
+            assert_eq!(create["type"], "create_session");
+            assert_eq!(create["username"], "tdm-test-user");
+            write_mock_response(
+                &mut stream,
+                serde_json::json!({
+                    "type": "auth_message",
+                    "auth_message_type": "secret",
+                    "auth_message": "Password:"
+                }),
+            );
+
+            let answer = read_mock_request(&mut stream);
+            assert_eq!(answer["type"], "post_auth_message_response");
+            assert_eq!(answer["response"], "test-only-secret");
+            write_mock_response(&mut stream, serde_json::json!({"type": "success"}));
+
+            let start = read_mock_request(&mut stream);
+            assert_eq!(start["type"], "start_session");
+            assert_eq!(start["cmd"], serde_json::json!(["/usr/bin/true"]));
+            assert_eq!(
+                start["env"],
+                serde_json::json!(["XDG_SESSION_TYPE=wayland"])
+            );
+            write_mock_response(&mut stream, serde_json::json!({"type": "success"}));
+        });
+
+        let selected_session = session::Session {
+            name: "Test Wayland".to_owned(),
+            exec: "/usr/bin/true".to_owned(),
+            command: vec!["/usr/bin/true".to_owned()],
+            kind: session::SessionKind::Wayland,
+            file: PathBuf::from("/tmp/tdm-test.desktop"),
+        };
+        let (event_tx, event_rx) = mpsc::channel();
+        let (reply_tx, reply_rx) = mpsc::channel();
+        let socket_string = socket_path.to_string_lossy().into_owned();
+        let client = thread::spawn(move || {
+            run_authentication_at(
+                &socket_string,
+                "tdm-test-user".to_owned(),
+                selected_session,
+                event_tx,
+                reply_rx,
+            );
+        });
+
+        match event_rx.recv_timeout(Duration::from_secs(5)).unwrap() {
+            UiEvent::Prompt { message, secret } => {
+                assert_eq!(message, "Password:");
+                assert!(secret);
+            }
+            _ => panic!("expected greetd password prompt"),
+        }
+        reply_tx
+            .send(UserReply::Answer(Some("test-only-secret".to_owned())))
+            .unwrap();
+        match event_rx.recv_timeout(Duration::from_secs(5)).unwrap() {
+            UiEvent::SessionStarted => {}
+            _ => panic!("expected session-started event"),
+        }
+
+        client.join().unwrap();
+        server.join().unwrap();
+        let _ = std::fs::remove_file(socket_path);
+    }
 }
