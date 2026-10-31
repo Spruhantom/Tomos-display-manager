@@ -223,7 +223,10 @@ mod tests {
         let session = parse_desktop_contents(input, path, SessionKind::X11)
             .unwrap()
             .unwrap();
-        assert_eq!(session.command, ["desktop-session", "--title", "TomOS Desktop"]);
+        assert_eq!(
+            session.command,
+            ["desktop-session", "--title", "TomOS Desktop"]
+        );
     }
 
     #[test]
