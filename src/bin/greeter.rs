@@ -708,13 +708,10 @@ mod greetd_protocol_tests {
 
     #[test]
     fn selects_supported_themes_and_defaults_unknown_values_to_dark() {
-        assert!(std::ptr::eq(css_for_theme("dark"), CSS));
-        assert!(std::ptr::eq(css_for_theme("light"), LIGHT_CSS));
-        assert!(std::ptr::eq(
-            css_for_theme("high-contrast"),
-            HIGH_CONTRAST_CSS
-        ));
-        assert!(std::ptr::eq(css_for_theme("unknown"), CSS));
+        assert_eq!(css_for_theme("dark"), CSS);
+        assert_eq!(css_for_theme("light"), LIGHT_CSS);
+        assert_eq!(css_for_theme("high-contrast"), HIGH_CONTRAST_CSS);
+        assert_eq!(css_for_theme("unknown"), CSS);
     }
 
     #[test]
