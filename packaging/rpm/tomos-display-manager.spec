@@ -17,7 +17,7 @@ greeter that delegates authentication to greetd and the host PAM configuration.
 This is experimental software and does not configure or enable greetd.
 
 %prep
-%autosetup -n Tomos-display-manager-%{version}
+%autosetup -n Tomos-display-manager-main
 
 %build
 cargo build --release --locked --bins
@@ -27,8 +27,6 @@ install -D -m755 target/release/tdm %{buildroot}%{_bindir}/tdm
 install -D -m755 target/release/tdm-greeter %{buildroot}%{_bindir}/tdm-greeter
 install -D -m644 README.md %{buildroot}%{_docdir}/%{name}/README.md
 install -D -m644 packaging/greetd/config.toml.example %{buildroot}%{_docdir}/%{name}/greetd-config.toml.example
-%{_docdir}/%{name}/greeter.conf.example
-%{_docdir}/%{name}/POWER-AND-THEMES.md
 install -D -m644 packaging/tdm/greeter.conf.example %{buildroot}%{_docdir}/%{name}/greeter.conf.example
 install -D -m644 docs/POWER-AND-THEMES.md %{buildroot}%{_docdir}/%{name}/POWER-AND-THEMES.md
 
@@ -37,6 +35,8 @@ install -D -m644 docs/POWER-AND-THEMES.md %{buildroot}%{_docdir}/%{name}/POWER-A
 %{_bindir}/tdm-greeter
 %{_docdir}/%{name}/README.md
 %{_docdir}/%{name}/greetd-config.toml.example
+%{_docdir}/%{name}/greeter.conf.example
+%{_docdir}/%{name}/POWER-AND-THEMES.md
 
 %license LICENSE
 
