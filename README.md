@@ -2,7 +2,7 @@
 
 A lightweight Linux display-manager project written in Rust for TomOS and other Linux distributions.
 
-> **Development status: experimental preview (0.2.0).** TDM currently includes a session-discovery CLI and a graphical GTK greeter preview. The graphical screen is not connected to authentication or session launching and must not be installed as the system login manager.
+> **Development status: experimental preview (0.0.3).** TDM currently includes a session-discovery CLI and a graphical GTK greeter preview. The graphical screen is not connected to authentication or session launching and must not be installed as the system login manager.
 
 ## Components
 
