@@ -165,7 +165,7 @@ fn build_window(app: &gtk::Application) {
     panel.append(&login);
     panel.append(&status);
 
-    let footer = gtk::Label::new(Some("TDM 0.2.0  •  GRAPHICAL GREETER PREVIEW"));
+    let footer = gtk::Label::new(Some("TDM 0.0.3  •  GRAPHICAL GREETER PREVIEW"));
     footer.add_css_class("tdm-subtitle");
 
     outer.append(&brand);
