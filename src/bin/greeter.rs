@@ -131,13 +131,14 @@ fn connect_power_control(
     let parent = window.clone();
     let status_label = status.clone();
     button.connect_clicked(move |_| {
-        let dialog = gtk::MessageDialog::builder()
+        let dialog = gtk::Dialog::builder()
             .transient_for(&parent)
             .modal(true)
-            .message_type(gtk::MessageType::Warning)
-            .buttons(gtk::ButtonsType::OkCancel)
-            .text(description)
+            .title("Confirm power action")
             .build();
+        dialog.add_button("Cancel", gtk::ResponseType::Cancel);
+        dialog.add_button("Continue", gtk::ResponseType::Ok);
+        dialog.content_area().append(&gtk::Label::new(Some(description)));
         let status_label = status_label.clone();
         dialog.connect_response(move |dialog, response| {
             if response == gtk::ResponseType::Ok {
