@@ -1,5 +1,5 @@
-use gtk4 as gtk;
 use gtk::prelude::*;
+use gtk4 as gtk;
 
 const CSS: &str = r#"
 window {
@@ -118,9 +118,7 @@ fn build_window(app: &gtk::Application) {
     let session = gtk::DropDown::from_strings(&["Automatic selection", "Wayland", "X11"]);
     session.set_hexpand(true);
 
-    let status = gtk::Label::new(Some(
-        "Preview mode — authentication is not connected yet.",
-    ));
+    let status = gtk::Label::new(Some("Preview mode — authentication is not connected yet."));
     status.add_css_class("tdm-status");
     status.set_wrap(true);
     status.set_halign(gtk::Align::Start);
