@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::cell::{Cell, RefCell};
 use std::env;
 use std::io::{Read, Write};
-use std::process::Command;
 use std::os::unix::net::UnixStream;
+use std::process::Command;
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
@@ -111,12 +111,14 @@ fn css_for_theme(theme: &str) -> &'static str {
 
 fn configured_css() -> &'static str {
     let configured = env::var("TDM_THEME").ok().or_else(|| {
-        std::fs::read_to_string("/etc/tdm/greeter.conf").ok().and_then(|contents| {
-            contents.lines().find_map(|line| {
-                let (key, value) = line.split_once('=')?;
-                (key.trim() == "theme").then(|| value.trim().to_owned())
+        std::fs::read_to_string("/etc/tdm/greeter.conf")
+            .ok()
+            .and_then(|contents| {
+                contents.lines().find_map(|line| {
+                    let (key, value) = line.split_once('=')?;
+                    (key.trim() == "theme").then(|| value.trim().to_owned())
+                })
             })
-        })
     });
     css_for_theme(configured.as_deref().unwrap_or("dark"))
 }
@@ -656,9 +658,27 @@ fn build_window(app: &gtk::Application) {
     poweroff.set_tooltip_text(Some("Request system power off"));
     reboot.set_tooltip_text(Some("Request system restart"));
     suspend.set_tooltip_text(Some("Request system suspend"));
-    connect_power_control(&poweroff, &window, &status, "poweroff", "Power off this computer?");
-    connect_power_control(&reboot, &window, &status, "reboot", "Restart this computer?");
-    connect_power_control(&suspend, &window, &status, "suspend", "Suspend this computer?");
+    connect_power_control(
+        &poweroff,
+        &window,
+        &status,
+        "poweroff",
+        "Power off this computer?",
+    );
+    connect_power_control(
+        &reboot,
+        &window,
+        &status,
+        "reboot",
+        "Restart this computer?",
+    );
+    connect_power_control(
+        &suspend,
+        &window,
+        &status,
+        "suspend",
+        "Suspend this computer?",
+    );
     power_actions.append(&poweroff);
     power_actions.append(&reboot);
     power_actions.append(&suspend);
@@ -690,7 +710,10 @@ mod greetd_protocol_tests {
     fn selects_supported_themes_and_defaults_unknown_values_to_dark() {
         assert!(std::ptr::eq(css_for_theme("dark"), CSS));
         assert!(std::ptr::eq(css_for_theme("light"), LIGHT_CSS));
-        assert!(std::ptr::eq(css_for_theme("high-contrast"), HIGH_CONTRAST_CSS));
+        assert!(std::ptr::eq(
+            css_for_theme("high-contrast"),
+            HIGH_CONTRAST_CSS
+        ));
         assert!(std::ptr::eq(css_for_theme("unknown"), CSS));
     }
 
