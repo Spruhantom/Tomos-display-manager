@@ -1,15 +1,22 @@
 [package]
 name = "tomos-display-manager"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.75"
-description = "A lightweight, session-aware Linux display manager foundation for TomOS"
+description = "A lightweight Rust display-manager and graphical greeter foundation for TomOS"
 license = "MIT"
 repository = "https://github.com/Spruhantom/Tomos-display-manager"
 
 [[bin]]
 name = "tdm"
 path = "src/main.rs"
+
+[[bin]]
+name = "tdm-greeter"
+path = "src/bin/greeter.rs"
+
+[dependencies]
+gtk4 = "0.9"
 
 [profile.release]
 lto = true
