@@ -463,7 +463,6 @@ fn build_window(app: &gtk::Application) {
     panel.append(&prompt_label);
     panel.append(&prompt_entry);
     panel.append(&actions);
-    panel.append(&cancel);
     panel.append(&status);
 
     let footer = gtk::Label::new(Some("TDM 0.0.5  •  GREETD / PAM AUTHENTICATION PREVIEW"));
