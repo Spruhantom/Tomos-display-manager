@@ -20,7 +20,7 @@ This is experimental software and does not configure or enable greetd.
 %autosetup -n Tomos-display-manager-main
 
 %build
-cargo build --release --locked --bins
+cargo build --release --bins
 
 %install
 install -D -m755 target/release/tdm %{buildroot}%{_bindir}/tdm
