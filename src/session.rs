@@ -178,6 +178,13 @@ fn scan_directory(path: &Path, kind: SessionKind) -> (Vec<Session>, Vec<String>)
             continue;
         }
         match parse_desktop_entry(&file, kind) {
+            Ok(Some(session)) if !executable_exists(&session.command[0]) => {
+                warnings.push(format!(
+                    "{}: session executable '{}' was not found or is not executable",
+                    file.display(),
+                    session.command[0]
+                ));
+            }
             Ok(Some(session)) => sessions.push(session),
             Ok(None) => {}
             Err(warning) => warnings.push(warning),
