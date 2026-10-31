@@ -17,7 +17,7 @@ build() {
 }
 
 package() {
-  cd "Tomos-display-manager-${pkgver}"
+  cd "$srcdir/Tomos-display-manager"
   install -Dm755 target/release/tdm "$pkgdir/usr/bin/tdm"
   install -Dm755 target/release/tdm-greeter "$pkgdir/usr/bin/tdm-greeter"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
