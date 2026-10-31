@@ -15,7 +15,6 @@ has() { command -v "$1" >/dev/null 2>&1; }
 [[ "$(id -u)" -ne 0 ]] || fail "Run this installer as a normal user, not with sudo. It will request sudo only when needed."
 has sudo || fail "sudo is required to install system packages and binaries."
 has curl || fail "curl is required."
-has pkg-config || true
 
 if [[ ! -r /etc/os-release ]]; then
     fail "Cannot identify this Linux distribution."
@@ -30,7 +29,7 @@ case "$DISTRO $ID_LIKE" in
     *arch*|*manjaro*|*endeavouros*)
         has pacman || fail "pacman was not found."
         say "Installing Arch build dependencies..."
-        sudo pacman -Sy --needed --noconfirm base-devel pkgconf gtk4 git curl
+        sudo pacman -Syu --needed --noconfirm base-devel pkgconf gtk4 git curl
         ;;
     *debian*|*ubuntu*|*linuxmint*|*pop*)
         has apt-get || fail "apt-get was not found."
