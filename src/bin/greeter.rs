@@ -1,8 +1,7 @@
 use gtk::prelude::*;
 use gtk4 as gtk;
-use greetd_ipc::{
-    codec::SyncCodec, AuthMessageType, ErrorType, Request, Response,
-};
+use serde::{Deserialize, Serialize};
+use std::io::{Read, Write};
 use std::cell::{Cell, RefCell};
 use std::env;
 use std::os::unix::net::UnixStream;
@@ -78,15 +77,73 @@ enum UserReply {
     Cancel,
 }
 
-fn send_request(stream: &mut UnixStream, request: Request) -> Result<(), String> {
-    request
-        .write_to(stream)
+#[derive(Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum Request {
+    CreateSession { username: String },
+    PostAuthMessageResponse { response: Option<String> },
+    CancelSession,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum Response {
+    Success,
+    Error {
+        error_type: ErrorType,
+        description: String,
+    },
+    AuthMessage {
+        auth_message_type: AuthMessageType,
+        auth_message: String,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum ErrorType {
+    Error,
+    AuthError,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum AuthMessageType {
+    Visible,
+    Secret,
+    Info,
+    Error,
+}
+
+fn send_request<W: Write>(stream: &mut W, request: Request) -> Result<(), String> {
+    let payload = serde_json::to_vec(&request)
+        .map_err(|error| format!("Could not encode greetd request: {error}"))?;
+    let length = u32::try_from(payload.len())
+        .map_err(|_| "greetd request is too large".to_owned())?;
+    stream
+        .write_all(&length.to_ne_bytes())
+        .and_then(|()| stream.write_all(&payload))
+        .and_then(|()| stream.flush())
         .map_err(|error| format!("Could not send greetd request: {error}"))
 }
 
-fn read_response(stream: &mut UnixStream) -> Result<Response, String> {
-    Response::read_from(stream)
-        .map_err(|error| format!("Could not read greetd response: {error}"))
+fn read_response<R: Read>(stream: &mut R) -> Result<Response, String> {
+    const MAX_RESPONSE_BYTES: u32 = 1024 * 1024;
+    let mut length_bytes = [0_u8; 4];
+    stream
+        .read_exact(&mut length_bytes)
+        .map_err(|error| format!("Could not read greetd response length: {error}"))?;
+    let length = u32::from_ne_bytes(length_bytes);
+    if length == 0 || length > MAX_RESPONSE_BYTES {
+        return Err(format!("greetd response length is invalid: {length} bytes"));
+    }
+
+    let mut payload = vec![0_u8; length as usize];
+    stream
+        .read_exact(&mut payload)
+        .map_err(|error| format!("Could not read greetd response payload: {error}"))?;
+    serde_json::from_slice(&payload)
+        .map_err(|error| format!("Could not decode greetd response: {error}"))
 }
 
 fn cancel_greetd_session(stream: &mut UnixStream) {
@@ -427,4 +484,54 @@ fn main() -> gtk::glib::ExitCode {
 
     app.connect_activate(build_window);
     app.run()
+}
+
+
+#[cfg(test)]
+mod greetd_protocol_tests {
+    use super::*;
+    use std::io::Cursor;
+
+    #[test]
+    fn decodes_secret_authentication_prompt_with_protocol_field_names() {
+        let json = br#"{"type":"auth_message","auth_message_type":"secret","auth_message":"Password:"}"#;
+        let mut frame = Vec::new();
+        frame.extend_from_slice(&(json.len() as u32).to_ne_bytes());
+        frame.extend_from_slice(json);
+
+        match read_response(&mut Cursor::new(frame)).unwrap() {
+            Response::AuthMessage {
+                auth_message_type: AuthMessageType::Secret,
+                auth_message,
+            } => assert_eq!(auth_message, "Password:"),
+            _ => panic!("expected secret authentication prompt"),
+        }
+    }
+
+    #[test]
+    fn encodes_create_session_request_using_greetd_protocol() {
+        let mut frame = Cursor::new(Vec::new());
+        send_request(
+            &mut frame,
+            Request::CreateSession {
+                username: "tom".to_owned(),
+            },
+        )
+        .unwrap();
+
+        let bytes = frame.into_inner();
+        let length = u32::from_ne_bytes(bytes[..4].try_into().unwrap()) as usize;
+        let request: serde_json::Value =
+            serde_json::from_slice(&bytes[4..4 + length]).unwrap();
+        assert_eq!(request["type"], "create_session");
+        assert_eq!(request["username"], "tom");
+    }
+
+    #[test]
+    fn rejects_oversized_greetd_response() {
+        let mut frame = Cursor::new((MAX_RESPONSE_TEST + 1).to_ne_bytes().to_vec());
+        assert!(read_response(&mut frame).is_err());
+    }
+
+    const MAX_RESPONSE_TEST: u32 = 1024 * 1024;
 }
