@@ -1,6 +1,6 @@
 [package]
 name = "tomos-display-manager"
-version = "0.0.4"
+version = "0.0.5"
 edition = "2021"
 rust-version = "1.83"
 description = "A lightweight Rust display-manager and graphical greeter foundation for TomOS"
@@ -17,6 +17,7 @@ path = "src/bin/greeter.rs"
 
 [dependencies]
 gtk4 = "0.9"
+greetd_ipc = { version = "0.10.3", features = ["sync-codec"] }
 
 [profile.release]
 lto = true
