@@ -1,14 +1,17 @@
 use gtk::prelude::*;
 use gtk4 as gtk;
 use serde::{Deserialize, Serialize};
-use std::io::{Read, Write};
 use std::cell::{Cell, RefCell};
 use std::env;
+use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::rc::Rc;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::Duration;
+
+#[path = "../session.rs"]
+mod session;
 
 const CSS: &str = r#"
 window {
@@ -68,6 +71,7 @@ button:disabled {
 enum UiEvent {
     Prompt { message: String, secret: bool },
     Status(String),
+    SessionStarted,
     Finished(String),
     Failed(String),
 }
@@ -77,11 +81,17 @@ enum UserReply {
     Cancel,
 }
 
+enum AuthOutcome {
+    Started,
+    Cancelled,
+}
+
 #[derive(Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Request {
     CreateSession { username: String },
     PostAuthMessageResponse { response: Option<String> },
+    StartSession { cmd: Vec<String>, env: Vec<String> },
     CancelSession,
 }
 
@@ -118,8 +128,8 @@ enum AuthMessageType {
 fn send_request<W: Write>(stream: &mut W, request: Request) -> Result<(), String> {
     let payload = serde_json::to_vec(&request)
         .map_err(|error| format!("Could not encode greetd request: {error}"))?;
-    let length = u32::try_from(payload.len())
-        .map_err(|_| "greetd request is too large".to_owned())?;
+    let length =
+        u32::try_from(payload.len()).map_err(|_| "greetd request is too large".to_owned())?;
     stream
         .write_all(&length.to_ne_bytes())
         .and_then(|()| stream.write_all(&payload))
@@ -153,10 +163,11 @@ fn cancel_greetd_session(stream: &mut UnixStream) {
 
 fn run_authentication(
     username: String,
+    selected_session: session::Session,
     events: Sender<UiEvent>,
     replies: Receiver<UserReply>,
 ) {
-    let result = (|| -> Result<String, String> {
+    let result = (|| -> Result<AuthOutcome, String> {
         let socket = env::var("GREETD_SOCK")
             .map_err(|_| "GREETD_SOCK is not set. Start TDM through greetd.".to_owned())?;
         let mut stream = UnixStream::connect(&socket)
@@ -173,23 +184,28 @@ fn run_authentication(
         loop {
             match read_response(&mut stream)? {
                 Response::Success => {
-                    // Authentication is complete. TDM does not launch a desktop
-                    // session yet, so release the pending greetd session cleanly.
-                    send_request(&mut stream, Request::CancelSession)?;
+                    let session_env = vec![format!(
+                        "XDG_SESSION_TYPE={}",
+                        selected_session.kind.env_value()
+                    )];
+                    send_request(
+                        &mut stream,
+                        Request::StartSession {
+                            cmd: selected_session.command.clone(),
+                            env: session_env,
+                        },
+                    )?;
+
                     match read_response(&mut stream)? {
-                        Response::Success => {
-                            return Ok(
-                                "PAM authentication succeeded. Desktop session launching is not implemented yet."
-                                    .to_owned(),
-                            );
-                        }
+                        Response::Success => return Ok(AuthOutcome::Started),
                         Response::Error { description, .. } => {
-                            return Err(format!(
-                                "Authentication succeeded, but greetd could not close the pending session: {description}"
-                            ));
+                            return Err(format!("Could not start desktop session: {description}"));
                         }
                         Response::AuthMessage { .. } => {
-                            return Err("Unexpected authentication prompt while closing the session.".to_owned());
+                            return Err(
+                                "Unexpected authentication prompt while starting the session."
+                                    .to_owned(),
+                            );
                         }
                     }
                 }
@@ -237,7 +253,7 @@ fn run_authentication(
                         Ok(UserReply::Answer(answer)) => answer,
                         Ok(UserReply::Cancel) => {
                             cancel_greetd_session(&mut stream);
-                            return Ok("Sign-in cancelled.".to_owned());
+                            return Ok(AuthOutcome::Cancelled);
                         }
                         Err(RecvTimeoutError::Timeout) => {
                             cancel_greetd_session(&mut stream);
@@ -259,8 +275,11 @@ fn run_authentication(
     })();
 
     match result {
-        Ok(message) => {
-            let _ = events.send(UiEvent::Finished(message));
+        Ok(AuthOutcome::Started) => {
+            let _ = events.send(UiEvent::SessionStarted);
+        }
+        Ok(AuthOutcome::Cancelled) => {
+            let _ = events.send(UiEvent::Finished("Sign-in cancelled.".to_owned()));
         }
         Err(message) => {
             let _ = events.send(UiEvent::Failed(message));
@@ -314,7 +333,25 @@ fn build_window(app: &gtk::Application) {
     username.set_placeholder_text(Some("Your username"));
     username.set_hexpand(true);
 
-    let prompt_label = gtk::Label::new(Some("PASSWORD"));
+    let session_label = gtk::Label::new(Some("DESKTOP SESSION"));
+    session_label.set_halign(gtk::Align::Start);
+    session_label.add_css_class("tdm-subtitle");
+    let (sessions, session_warnings) = session::discover_sessions();
+    let session_labels: Vec<String> = sessions
+        .iter()
+        .map(|item| format!("{} ({})", item.name, item.kind.label()))
+        .collect();
+    let session_label_refs: Vec<&str> = session_labels.iter().map(String::as_str).collect();
+    let session_dropdown = if session_label_refs.is_empty() {
+        gtk::DropDown::from_strings(&["No desktop sessions found"])
+    } else {
+        gtk::DropDown::from_strings(&session_label_refs)
+    };
+    session_dropdown.set_hexpand(true);
+    session_dropdown.set_sensitive(!sessions.is_empty());
+    let sessions = Rc::new(sessions);
+
+    let prompt_label = gtk::Label::new(Some("AUTHENTICATION"));
     prompt_label.set_halign(gtk::Align::Start);
     prompt_label.add_css_class("tdm-subtitle");
     let prompt_entry = gtk::Entry::new();
@@ -322,9 +359,14 @@ fn build_window(app: &gtk::Application) {
     prompt_entry.set_visibility(false);
     prompt_entry.set_hexpand(true);
 
-    let status = gtk::Label::new(Some(
-        "Authentication is handled by greetd and your system PAM policy.",
-    ));
+    let initial_status = if sessions.is_empty() {
+        "No usable Wayland or X11 desktop sessions were found."
+    } else if !session_warnings.is_empty() {
+        "Choose a desktop session. Some session files could not be read; see the system log."
+    } else {
+        "Choose a desktop session and sign in using your system PAM account."
+    };
+    let status = gtk::Label::new(Some(initial_status));
     status.add_css_class("tdm-status");
     status.set_wrap(true);
     status.set_halign(gtk::Align::Start);
@@ -332,7 +374,7 @@ fn build_window(app: &gtk::Application) {
     let login = gtk::Button::with_label("Sign in");
     login.add_css_class("suggested-action");
     login.set_hexpand(true);
-    login.set_sensitive(true);
+    login.set_sensitive(!sessions.is_empty());
 
     let cancel = gtk::Button::with_label("Cancel");
     cancel.set_sensitive(false);
@@ -347,6 +389,8 @@ fn build_window(app: &gtk::Application) {
     let status_for_login = status.clone();
     let login_for_login = login.clone();
     let cancel_for_login = cancel.clone();
+    let sessions_for_login = sessions.clone();
+    let dropdown_for_login = session_dropdown.clone();
     let busy = Rc::new(Cell::new(false));
     let reply_sender: Rc<RefCell<Option<Sender<UserReply>>>> = Rc::new(RefCell::new(None));
     let (event_tx, event_rx): (Sender<UiEvent>, Receiver<UiEvent>) = mpsc::channel();
@@ -371,6 +415,12 @@ fn build_window(app: &gtk::Application) {
             return;
         }
 
+        let selected_index = dropdown_for_login.selected() as usize;
+        let Some(selected_session) = sessions_for_login.get(selected_index).cloned() else {
+            status_for_login.set_text("Select an available desktop session.");
+            return;
+        };
+
         let (reply_tx, reply_rx) = mpsc::channel();
         *sender_for_click.borrow_mut() = Some(reply_tx);
         busy_for_click.set(true);
@@ -383,7 +433,9 @@ fn build_window(app: &gtk::Application) {
         status_for_login.set_text("Connecting to greetd…");
 
         let events = event_tx.clone();
-        thread::spawn(move || run_authentication(name, events, reply_rx));
+        thread::spawn(move || {
+            run_authentication(name, selected_session, events, reply_rx)
+        });
     });
 
     let sender_for_cancel = reply_sender.clone();
@@ -404,6 +456,7 @@ fn build_window(app: &gtk::Application) {
     let prompt_for_events = prompt_entry.clone();
     let prompt_label_for_events = prompt_label.clone();
     let status_for_events = status.clone();
+    let app_for_events = app.clone();
     gtk::glib::timeout_add_local(Duration::from_millis(100), move || {
         while let Ok(event) = event_rx.try_recv() {
             match event {
@@ -423,6 +476,12 @@ fn build_window(app: &gtk::Application) {
                 }
                 UiEvent::Status(message) => {
                     status_for_events.set_text(&message);
+                }
+                UiEvent::SessionStarted => {
+                    prompt_for_events.set_text("");
+                    status_for_events.set_text("Desktop session accepted. Starting your desktop…");
+                    app_for_events.quit();
+                    return gtk::glib::ControlFlow::Break;
                 }
                 UiEvent::Finished(message) => {
                     busy_for_events.set(false);
@@ -460,12 +519,14 @@ fn build_window(app: &gtk::Application) {
     panel.append(&heading);
     panel.append(&username_label);
     panel.append(&username);
+    panel.append(&session_label);
+    panel.append(&session_dropdown);
     panel.append(&prompt_label);
     panel.append(&prompt_entry);
     panel.append(&actions);
     panel.append(&status);
 
-    let footer = gtk::Label::new(Some("TDM 0.0.5  •  GREETD / PAM AUTHENTICATION PREVIEW"));
+    let footer = gtk::Label::new(Some("TDM 0.0.6  •  WAYLAND / X11 SESSION LAUNCHING"));
     footer.add_css_class("tdm-subtitle");
 
     outer.append(&brand);
@@ -484,7 +545,6 @@ fn main() -> gtk::glib::ExitCode {
     app.connect_activate(build_window);
     app.run()
 }
-
 
 #[cfg(test)]
 mod greetd_protocol_tests {
@@ -508,12 +568,13 @@ mod greetd_protocol_tests {
     }
 
     #[test]
-    fn encodes_create_session_request_using_greetd_protocol() {
+    fn encodes_start_session_request_as_argv_and_environment() {
         let mut frame = Cursor::new(Vec::new());
         send_request(
             &mut frame,
-            Request::CreateSession {
-                username: "tom".to_owned(),
+            Request::StartSession {
+                cmd: vec!["sway".to_owned(), "--unsupported-test-flag".to_owned()],
+                env: vec!["XDG_SESSION_TYPE=wayland".to_owned()],
             },
         )
         .unwrap();
@@ -522,8 +583,9 @@ mod greetd_protocol_tests {
         let length = u32::from_ne_bytes(bytes[..4].try_into().unwrap()) as usize;
         let request: serde_json::Value =
             serde_json::from_slice(&bytes[4..4 + length]).unwrap();
-        assert_eq!(request["type"], "create_session");
-        assert_eq!(request["username"], "tom");
+        assert_eq!(request["type"], "start_session");
+        assert_eq!(request["cmd"][0], "sway");
+        assert_eq!(request["env"][0], "XDG_SESSION_TYPE=wayland");
     }
 
     #[test]
