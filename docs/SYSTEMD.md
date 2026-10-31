@@ -9,7 +9,9 @@ two login managers to compete for the same seat.
 3. Back up the existing `/etc/greetd/config.toml`, if present.
 4. Review `/usr/share/doc/tomos-display-manager/greetd-config.toml.example`.
 5. Confirm the greeter account exists on the distribution. The example uses
-   `_greetd`, but some distributions use another account.
+   `_greetd`, but some distributions use another account. The example command
+   points to `/usr/bin/tdm-greeter` (the package path); if you used the curl
+   installer, change it to `/usr/local/bin/tdm-greeter`.
 6. Configure the greetd default session to launch `/usr/bin/tdm-greeter`.
 7. Keep a recovery TTY and the previous display manager available.
 8. Only then, from a local terminal, enable/start the distribution's
