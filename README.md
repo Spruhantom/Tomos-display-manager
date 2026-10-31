@@ -90,7 +90,13 @@ verify dependencies before distributing them.
 An example greetd configuration is installed as documentation by the package
 recipes. Review it before copying it to `/etc/greetd/config.toml`. The example
 uses the `_greetd` account; account names and service setup vary by distro.
-TDM does not enable greetd or disable another display manager automatically.
+TDM uses the distribution-provided `greetd.service`; it does not install a
+competing display-manager service or enable greetd automatically.
+
+The greeter has dark, light, and high-contrast themes, plus confirmed power
+controls routed through `loginctl`/systemd-logind. See [power and themes](docs/POWER-AND-THEMES.md),
+[systemd setup](docs/SYSTEMD.md), and the [initial security review](docs/SECURITY-REVIEW.md).
+These features still require testing on real greetd sessions and distro images.
 
 See [system testing](docs/TESTING.md) and the [release checklist](docs/RELEASE-CHECKLIST.md)
 before using TDM as a daily login manager.
@@ -109,7 +115,7 @@ before using TDM as a daily login manager.
 - [x] Safe argv-based session command parsing (no shell)
 - [ ] Automated end-to-end tests against greetd and PAM
 - [ ] Test Wayland and X11 startup on supported distributions
-- [ ] Functional power controls with logind authorization and confirmation
+- [x] Initial power-off, restart, and suspend controls with confirmation (logind authorization still needs distro testing) with logind authorization and confirmation
 - [ ] Configurable themes and completed accessibility review
 - [ ] Verified systemd/greetd integration and release-ready distro packages
 - [ ] Independent security review and clean-VM installation testing
