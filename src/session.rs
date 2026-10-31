@@ -25,6 +25,8 @@ impl SessionKind {
         }
     }
 
+    // Used by the greeter binary; the CLI binary compiles this module too.
+    #[allow(dead_code)]
     pub fn env_value(self) -> &'static str {
         match self {
             Self::Wayland => "wayland",
