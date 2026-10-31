@@ -1,5 +1,0 @@
-tomos-display-manager (0.0.6-1) unstable; urgency=medium
-
-  * Initial experimental package for TDM CLI and GTK4 greetd greeter.
-
- -- TomOS contributors <noreply@github.com>  Sat, 31 Oct 2026 19:30:00 +0000
