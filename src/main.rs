@@ -27,8 +27,8 @@ impl SessionKind {
 }
 
 fn parse_desktop_entry(path: &Path, kind: SessionKind) -> Result<Option<Session>, String> {
-    let contents = fs::read_to_string(path)
-        .map_err(|error| format!("{}: {error}", path.display()))?;
+    let contents =
+        fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?;
     parse_desktop_contents(&contents, path, kind)
 }
 
@@ -124,8 +124,10 @@ fn scan_directory(path: &Path, kind: SessionKind) -> (Vec<Session>, Vec<String>)
 }
 
 fn discover_sessions() -> (Vec<Session>, Vec<String>) {
-    let (mut sessions, mut warnings) =
-        scan_directory(Path::new("/usr/share/wayland-sessions"), SessionKind::Wayland);
+    let (mut sessions, mut warnings) = scan_directory(
+        Path::new("/usr/share/wayland-sessions"),
+        SessionKind::Wayland,
+    );
     let (x11_sessions, x11_warnings) =
         scan_directory(Path::new("/usr/share/xsessions"), SessionKind::X11);
     sessions.extend(x11_sessions);
@@ -214,7 +216,8 @@ mod tests {
     #[test]
     fn parses_a_wayland_desktop_entry() {
         let path = Path::new("/tmp/example.desktop");
-        let input = "[Desktop Entry]\nName=Example Desktop\nExec=example-session\nType=Application\n";
+        let input =
+            "[Desktop Entry]\nName=Example Desktop\nExec=example-session\nType=Application\n";
         let parsed = parse_desktop_contents(input, path, SessionKind::Wayland).unwrap();
         let session = parsed.unwrap();
         assert_eq!(session.name, "Example Desktop");
