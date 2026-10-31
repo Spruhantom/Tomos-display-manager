@@ -19,7 +19,7 @@ Requires Rust 1.75 or newer.
 
 ```sh
 cargo build --release
-` ``
+```
 
 The executable is created at `target/release/tdm`.
 
