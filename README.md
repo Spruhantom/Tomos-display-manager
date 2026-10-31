@@ -16,11 +16,12 @@ A lightweight Linux display-manager project written in Rust for TomOS and other 
 ### `tdm-greeter` — GTK4 greeter
 
 - TomOS dark-charcoal and neon-cyan interface.
-- Sends the entered Linux username to greetd using its supported IPC protocol.
+- Sends the entered Linux username to greetd using its documented IPC protocol.
 - Uses greetd as the authentication broker; PAM policy is applied by the host's greetd installation.
 - Handles secret, visible, informational, and error authentication messages.
 - Clears response fields after submission, supports cancellation, and applies socket read/write timeouts.
 - Runs the IPC conversation on a worker thread so the GTK interface remains responsive.
+- Includes protocol framing and JSON field-name unit tests.
 
 **Important limitations:** TDM does not implement PAM itself and does not verify passwords. Authentication only works when the greeter is launched by a correctly configured greetd instance with `GREETD_SOCK` available and a suitable host PAM configuration. After successful authentication, this preview cancels the pending greetd session because desktop session launching is not implemented yet. It is therefore an authentication integration preview, not a usable daily-login display manager. Do not configure it as your only login path.
 
@@ -64,7 +65,7 @@ The greeter must be started by greetd to receive its IPC socket. Running it dire
 
 TDM deliberately delegates authentication to greetd and the host's PAM stack. The greetd IPC protocol carries authentication prompts and responses; TDM never reads shadow files, calls password-verification APIs, or stores credentials. PAM conversation prompts are not assumed to be password-only: visible and secret prompts are presented to the user, while informational and error messages are displayed and acknowledged without an answer.
 
-The IPC implementation uses the `greetd_ipc` crate rather than hand-written JSON framing. The protocol uses a native-endian 32-bit payload length followed by JSON, and greetd exposes its socket path through `GREETD_SOCK`.
+The protocol implementation uses Serde for typed request/response data and validates the native-endian 32-bit length-prefixed JSON frames. Responses larger than 1 MiB are rejected. This keeps the project on its existing MIT-compatible dependency path rather than adding a GPL-only IPC library.
 
 ## Roadmap
 
@@ -75,7 +76,8 @@ The IPC implementation uses the `greetd_ipc` crate rather than hand-written JSON
 - [x] Initial greetd/PAM authentication conversation
 - [x] Secret/visible/info/error prompt handling
 - [x] Authentication cancellation and IPC timeouts
-- [ ] Automated greetd IPC state-machine tests
+- [x] Basic greetd IPC framing tests
+- [ ] Automated end-to-end tests against greetd and PAM
 - [ ] Safe desktop session command selection and launching
 - [ ] Functional power controls
 - [ ] Theme configuration and accessibility review
